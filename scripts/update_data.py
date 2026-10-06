@@ -52,12 +52,12 @@ def number(value):
     if not math.isfinite(v): raise ValueError('Ungültiger Zahlenwert')
     return v
 
-def weather_station(row, boundary):
+def weather_station(row, boundary, dataset="smn"):
     code = row['station_abbr'].lower()
     lon = float(row['station_coordinates_wgs84_lon'])
     lat = float(row['station_coordinates_wgs84_lat'])
     if not in_canton(lon, lat, boundary): raise ValueError('Station ausserhalb Kantonsgrenze: '+code)
-    url = f'https://data.geo.admin.ch/ch.meteoschweiz.ogd-smn/{code}/ogd-smn_{code}_t_now.csv'
+    url = f'https://data.geo.admin.ch/ch.meteoschweiz.ogd-{dataset}/{code}/ogd-{dataset}_{code}_t_now.csv'
     rows = list(csv.DictReader(io.StringIO(fetch(url).decode('cp1252')), delimiter=';'))
     points = []
     for r in rows:
@@ -72,17 +72,22 @@ def weather_station(row, boundary):
     # Keine Interpolation, keine Ersetzung fehlender Werte durch Null.
     return {'code':code.upper(), 'name':row['station_name'], 'lat':lat, 'lon':lon,
             'height':float(row['station_height_masl']), 'source':url,
+            'kind':'precipitation' if dataset == 'smn-precip' else 'weather',
+            'provider':'MeteoSchweiz',
             'fetched_at':datetime.now(UTC).isoformat(), 'latest':points[-1], 'series':points}
 
 def weather(boundary):
-    rows = list(csv.DictReader(io.StringIO(fetch(META).decode('cp1252')), delimiter=';'))
-    stations = [r for r in rows if r['station_canton'] == 'SO']
+    stations = []
+    for dataset in ['smn', 'smn-precip']:
+        meta = f'https://data.geo.admin.ch/ch.meteoschweiz.ogd-{dataset}/ogd-{dataset}_meta_stations.csv'
+        rows = list(csv.DictReader(io.StringIO(fetch(meta).decode('cp1252')), delimiter=';'))
+        stations.extend((r, dataset) for r in rows if r['station_canton'] == 'SO')
     if not stations: raise ValueError('Keine Solothurner Stationen in Metadaten')
     previous = json.loads((DATA/'weather.json').read_text()) if (DATA/'weather.json').exists() else {'stations':[]}
     result = []
     errors = []
-    for row in stations:
-        try: result.append(weather_station(row, boundary))
+    for row, dataset in stations:
+        try: result.append(weather_station(row, boundary, dataset))
         except Exception as e:
             errors.append(row['station_abbr']+': '+str(e))
             old = next((s for s in previous['stations'] if s['code']==row['station_abbr']), None)
@@ -131,8 +136,9 @@ def main():
         errors.append('Kantonsgrenze: '+str(e))
         if not (DATA/'canton.geojson').exists(): raise
         boundary = json.loads((DATA/'canton.geojson').read_text())
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        tasks = [('Wetter',pool.submit(weather,boundary)),('Baustellen',pool.submit(construction))]
+    from extra_data import charging, radar
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        tasks = [('Wetter',pool.submit(weather,boundary)),('Baustellen',pool.submit(construction)),('Ladestationen',pool.submit(charging,boundary)),('Radar',pool.submit(radar))]
         for label,task in tasks:
             try: task.result()
             except Exception as e: errors.append(label+': '+str(e))
