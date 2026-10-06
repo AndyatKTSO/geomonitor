@@ -1,0 +1,41 @@
+name: Geo-Monitor aktualisieren und publizieren
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '17,47 * * * *'
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: geo-monitor-pages
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Abhängigkeiten installieren
+        run: pip install -r requirements.txt
+      - name: Amtliche Daten aktualisieren
+        run: python scripts/update_data.py
+      - name: Seite zusammenstellen
+        run: |
+          mkdir -p public
+          cp index.html style.css app.js public/
+          cp -r data vendor public/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+      - name: Publizieren
+        id: deployment
+        uses: actions/deploy-pages@v4
