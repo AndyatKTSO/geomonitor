@@ -5,14 +5,16 @@ const date = (s, time=false) => s ? new Intl.DateTimeFormat('de-CH',{timeZone:'E
 const value = (v, unit) => v===null||v===undefined ? '—' : new Intl.NumberFormat('de-CH',{maximumFractionDigits:1}).format(v)+' '+unit;
 const WMS = 'https://geo.so.ch/api/wms';
 const themes = [
-  {id:'weather',title:'Wetterstationen',sub:'Messwerte · Grenchen & Gösgen',checked:true},
+  {id:'charging',title:'E-Auto-Ladepunkte',sub:'BFE · Standorte & Leistung'},
+  {id:'ch.so.arp.wanderwege_mit_sperrungen_umleitungen',title:'Wanderwege & Sperrungen',sub:'Kantonales Wegenetz mit Umleitungen',note:'Amtliches Wanderwegenetz mit publizierten Sperrungen und Umleitungen. Der Kartendienst liefert den publizierten Stand; keine Garantie einer sofortigen Nachführung. Details und Legende beachten.'},
+  {id:'weather',title:'Wetterstationen',sub:'Wetter & Niederschlag · MeteoSchweiz',checked:true},
   {id:'ch.so.avt.verkehrszaehlstellen.zaehlstellen.miv',title:'Verkehrszählstellen',sub:'Standorte MIV · keine Live-Werte',note:'Amtliche Standorte der Verkehrszählstellen für motorisierten Individualverkehr. Keine aktuellen Verkehrsflüsse. Fachlicher Datenstand: siehe Geoportal.'},
   {id:'ch.so.afu.naturgefahren.gefahrengebiet_wasser',title:'Naturgefahren · Wasser',sub:'Gefahrenkarte · keine Live-Warnung',note:'Gefährdungsgrundlage für Wassergefahren. Keine Aussage zur aktuellen Hochwasserlage. Fachlicher Datenstand: siehe Geoportal.'},
   {id:'ch.so.afu.klimaanalysekarte.luftemperatur_14uhr_ist',title:'Klima · Hitze am Tag',sub:'Modell · Lufttemperatur 14 Uhr · 2020',note:'Modellierte Lufttemperatur am Tag (14 Uhr), Ist-Zustand 2020. Keine heutige Temperaturmessung.'},
   {id:'ch.so.afu.grundwasser.mittelstand',title:'Grundwasser',sub:'Kartengrundlage · Mittelstand',note:'Amtliche Grundwassergeometrie zum Mittelstand. Kein aktueller Grundwasserpegel. Fachlicher Datenstand: siehe Geoportal.'},
   {id:'ch.so.agi.gemeindegrenzen',title:'Gemeindegrenzen',sub:'Amtliche räumliche Gliederung',note:'Gemeindegrenzen des Kantons Solothurn aus dem kantonalen Kartendienst.'}
 ];
-let map, base, boundary, stationGroup, weatherData, roadData, selectedCode, selectedMetric='temperature';
+let chargingGroup, map, base, boundary, stationGroup, weatherData, roadData, selectedCode, selectedMetric='temperature';
 const layers = new Map();
 const active = new Set();
 const problems = new Set();
@@ -33,7 +35,7 @@ function initMap(){
   base=wms($('basemap').value).addTo(map);
   map.createPane('mask');map.getPane('mask').style.zIndex=450;map.getPane('mask').style.pointerEvents='none';
   map.createPane('outline');map.getPane('outline').style.zIndex=455;map.getPane('outline').style.pointerEvents='none';
-  stationGroup=L.layerGroup().addTo(map);
+  stationGroup=L.layerGroup().addTo(map);chargingGroup=L.layerGroup();
   const geo=L.geoJSON(boundary,{pane:'outline',style:{color:'#137d72',weight:2.4,opacity:.9,fill:false},interactive:false}).addTo(map);
   // Die Aussenseite wird mit den amtlichen Polygonen als Löcher maskiert.
   const rings=[[[46.3,6.6],[48.2,6.6],[48.2,8.8],[46.3,8.8]]];
@@ -45,6 +47,7 @@ function initMap(){
   $('layerControls').innerHTML=themes.map(t=>`<label class="layer-option"><input type="checkbox" data-layer="${esc(t.id)}" ${t.checked?'checked':''}><span><strong>${esc(t.title)}</strong><small>${esc(t.sub)}</small></span></label>`).join('');
   $('layerControls').addEventListener('change',e=>{
     const id=e.target.dataset.layer;if(!id)return;
+    if(id==='charging'){e.target.checked?chargingGroup.addTo(map):map.removeLayer(chargingGroup);return;}
     if(id==='weather'){e.target.checked?stationGroup.addTo(map):map.removeLayer(stationGroup);return;}
     if(e.target.checked){let l=layers.get(id);if(!l){l=wms(id,id.includes('klimaanalyse')?.65:.8);layers.set(id,l);}l.addTo(map);active.add(id);message(themes.find(t=>t.id===id).note);}
     else{map.removeLayer(layers.get(id));active.delete(id);message('Amtliche Kartengrundlagen · keine aktuelle Warnlage');}legends();
@@ -71,8 +74,8 @@ function drawWeather(){
   $('stationCount').textContent=weatherData.stations.length;
   for(const s of weatherData.stations){
     if(!inside({lat:s.lat,lng:s.lon})){problem('Station ausserhalb Kantonsgrenze verworfen: '+s.name);continue;}
-    const fresh=freshness(s),temp=value(s.latest.temperature,'°');
-    L.marker([s.lat,s.lon],{icon:L.divIcon({className:'',html:`<div class="weather-pin ${fresh.cls?'stale':''}" style="width:40px;height:40px">${esc(temp)}</div>`,iconSize:[40,40],iconAnchor:[20,20]}),title:s.name+' – '+temp,keyboard:true}).bindTooltip(esc(s.name),{permanent:true,direction:'bottom',offset:[0,18],className:'weather-label'}).on('click',()=>selectStation(s.code)).addTo(stationGroup);
+    const fresh=freshness(s),temp=s.kind==='precipitation'?value(s.latest.rain,'mm'):value(s.latest.temperature,'°');
+    L.marker([s.lat,s.lon],{icon:L.divIcon({className:'',html:`<div class="weather-pin ${s.kind==='precipitation'?'rain-pin':''} ${fresh.cls?'stale':''}" style="width:40px;height:40px">${esc(temp)}</div>`,iconSize:[40,40],iconAnchor:[20,20]}),title:s.name+' – '+temp,keyboard:true}).bindTooltip(esc(s.name),{permanent:true,direction:'bottom',offset:[0,18],className:'weather-label'}).on('click',()=>selectStation(s.code)).addTo(stationGroup);
     if($('temp'+s.code)){$('temp'+s.code).textContent=value(s.latest.temperature,'°C');$('time'+s.code).textContent=date(s.latest.time,true)+(fresh.cls?' · '+fresh.label:'');}
   }
   if(weatherData.errors?.length)problem('Wetterabruf unvollständig. Verfügbare gespeicherte Werte sind gekennzeichnet.');
@@ -80,18 +83,21 @@ function drawWeather(){
 }
 function selectStation(code){
   selectedCode=code;const s=weatherData.stations.find(s=>s.code===code);if(!s)return;const f=freshness(s);
-  $('stationDetail').innerHTML=`<h2>${esc(s.name)}</h2><p class="station-height">${esc(s.height)} m ü. M. · MeteoSchweiz</p><span class="station-status ${f.cls}">${esc(f.label)}</span><div class="station-values"><div class="wide"><span>Lufttemperatur · 2 m über Boden</span><strong>${value(s.latest.temperature,'°C')}</strong></div><div><span>Niederschlag · letzte 10 Min.</span><strong>${value(s.latest.rain,'mm')}</strong></div><div><span>Wind · 10-Minuten-Mittel</span><strong>${value(s.latest.wind===null?null:s.latest.wind*3.6,'km/h')}</strong></div></div><p class="station-meta">Messzeit: ${date(s.latest.time,true)}<br>Abruf: ${date(s.fetched_at,true)}</p><a href="${esc(s.source)}" target="_blank" rel="noopener">Originaldaten CSV ↗</a>`;
-  chart(s.series);
+  $('stationDetail').innerHTML=`<h2>${esc(s.name)}</h2><p class="station-height">${esc(s.height)} m ü. M. · MeteoSchweiz<br>${s.kind==='precipitation'?'Niederschlagsstation · keine Temperatur-/Windmessung':'Automatische Wetterstation'}</p><span class="station-status ${f.cls}">${esc(f.label)}</span><div class="station-values">${s.kind==='precipitation'?'':`<div class="wide"><span>Lufttemperatur · 2 m über Boden</span><strong>${value(s.latest.temperature,'°C')}</strong></div>`}<div><span>Niederschlag · letzte 10 Min.</span><strong>${value(s.latest.rain,'mm')}</strong></div>${s.kind==='precipitation'?'':`<div><span>Wind · 10-Minuten-Mittel</span><strong>${value(s.latest.wind===null?null:s.latest.wind*3.6,'km/h')}</strong></div>`}</div><p class="station-meta">Messzeit: ${date(s.latest.time,true)}<br>Abruf: ${date(s.fetched_at,true)}</p><a href="${esc(s.source)}" target="_blank" rel="noopener">Originaldaten CSV ↗</a>`;
+  const metric=s.kind==='precipitation'?'rain':'temperature';
+  document.querySelector('.chart-title').textContent=metric==='rain'?'Niederschlag · je 10 Minuten':'Temperatur · verfügbare 10-Minuten-Werte';
+  $('chart').setAttribute('aria-label',metric==='rain'?'Niederschlagsverlauf':'Temperaturverlauf');
+  chart(s.series,metric);
 }
-function chart(series){
-  const samples=series.slice(-144),points=samples.filter(x=>x.temperature!==null),svg=$('chart');
-  if(!points.length){svg.innerHTML='<text x="10" y="70" fill="#637b7b" font-size="12">Keine Temperaturwerte verfügbar</text>';return;}
-  const lo=Math.floor(Math.min(...points.map(p=>p.temperature))-1),hi=Math.ceil(Math.max(...points.map(p=>p.temperature))+1),t0=Date.parse(samples[0].time),t1=Date.parse(samples.at(-1).time);
-  const x=p=>35+(Date.parse(p.time)-t0)/Math.max(t1-t0,1)*285,y=p=>110-(p.temperature-lo)/(hi-lo)*95;
+function chart(series,metric="temperature"){
+  const samples=series.slice(-144),points=samples.filter(x=>x[metric]!==null),svg=$('chart');
+  if(!points.length){svg.innerHTML='<text x="10" y="70" fill="#637b7b" font-size="12">Keine Messwerte verfügbar</text>';return;}
+  const lo=metric==='rain'?0:Math.floor(Math.min(...points.map(p=>p[metric]))-1),hi=Math.ceil(Math.max(...points.map(p=>p[metric]))+1),t0=Date.parse(samples[0].time),t1=Date.parse(samples.at(-1).time);
+  const x=p=>35+(Date.parse(p.time)-t0)/Math.max(t1-t0,1)*285,y=p=>110-(p[metric]-lo)/(hi-lo)*95;
   let path='',prev=null;
-  for(const p of samples){if(p.temperature===null){prev=null;continue;}const gap=!prev||Date.parse(p.time)-Date.parse(prev.time)>15*60000;path+=(gap?'M':'L')+x(p).toFixed(1)+','+y(p).toFixed(1)+' ';prev=p;}
+  for(const p of samples){if(p[metric]===null){prev=null;continue;}const gap=!prev||Date.parse(p.time)-Date.parse(prev.time)>15*60000;path+=(gap?'M':'L')+x(p).toFixed(1)+','+y(p).toFixed(1)+' ';prev=p;}
   const hour=s=>new Intl.DateTimeFormat('de-CH',{timeZone:'Europe/Zurich',hour:'2-digit',minute:'2-digit'}).format(new Date(s));
-  svg.innerHTML=[lo,(lo+hi)/2,hi].map(v=>`<line x1="35" y1="${y({temperature:v})}" x2="320" y2="${y({temperature:v})}" stroke="#e0e9e4"/><text x="0" y="${y({temperature:v})+4}" fill="#71877d" font-size="10">${v.toFixed(0)}°</text>`).join('')+`<path d="${path}" fill="none" stroke="#187e74" stroke-width="2.4"/><text x="35" y="135" fill="#71877d" font-size="10">${hour(samples[0].time)}</text><text x="320" y="135" text-anchor="end" fill="#71877d" font-size="10">${hour(samples.at(-1).time)}</text>`;
+  svg.innerHTML=[lo,(lo+hi)/2,hi].map(v=>`<line x1="35" y1="${y({[metric]:v})}" x2="320" y2="${y({[metric]:v})}" stroke="#e0e9e4"/><text x="0" y="${y({[metric]:v})+4}" fill="#71877d" font-size="10">${v.toFixed(0)}${metric==='rain'?' mm':'°'}</text>`).join('')+`<path d="${path}" fill="none" stroke="#187e74" stroke-width="2.4"/><text x="35" y="135" fill="#71877d" font-size="10">${hour(samples[0].time)}</text><text x="320" y="135" text-anchor="end" fill="#71877d" font-size="10">${hour(samples.at(-1).time)}</text>`;
   $('chartRange').textContent=date(samples[0].time,true)+' – '+date(samples.at(-1).time,true)+' · Lücken bleiben offen';
 }
 function today(){const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Zurich',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const get=t=>parts.find(p=>p.type===t).value;return get('year')+'-'+get('month')+'-'+get('day');}
@@ -117,6 +123,8 @@ async function start(){
   try{boundary=await load('data/canton.geojson');initMap();}catch{problem('Kantonskarte konnte nicht geladen werden. Bitte die Seite über GitHub Pages oder einen lokalen Webserver öffnen.');message('Karte nicht verfügbar');}
   await Promise.all([
     load('data/weather.json').then(d=>{weatherData=d;if(map)drawWeather();}).catch(()=>problem('Wetterdaten nicht verfügbar.')),
+    load('data/charging.json').then(drawCharging).catch(()=>problem('Ladepunkte nicht verfügbar.')),
+    load('data/radar.json').then(drawRadar).catch(()=>problem('Radarübersicht nicht verfügbar.')),
     load('data/construction.json').then(d=>{roadData=d;roads();}).catch(()=>problem('Baustellenliste nicht verfügbar.')),
     load('data/status.json').then(d=>{$('refreshTime').textContent='Letzter Datenlauf: '+date(d.checked_at,true);if(d.errors.length)problem('Einzelne Quellen konnten beim letzten Datenlauf nicht aktualisiert werden.');}).catch(()=>{$('refreshTime').textContent='Letzter Datenlauf nicht verfügbar';})
   ]);
@@ -124,3 +132,20 @@ async function start(){
 start();
 // Aktualisiert die sichtbaren Messwerte aus dem letzten veröffentlichten Datenlauf.
 setInterval(async()=>{try{weatherData=await load('data/weather.json');if(map)drawWeather();}catch{}},5*60*1000);
+
+function drawCharging(d){
+  $('chargingInfo').textContent=d.records.length+' Ladepunkte · Abruf: '+date(d.fetched_at,true)+'. '+d.scope;
+  if(!map)return;
+  chargingGroup.clearLayers();
+  const groups=new Map();
+  for(const r of d.records){if(!inside({lat:r.lat,lng:r.lon}))continue;const key=r.lat+','+r.lon;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(r);}
+  for(const records of groups.values()){
+    const r=records[0];
+    L.marker([r.lat,r.lon],{icon:L.divIcon({className:'',html:'<div class="charge-pin">ϟ</div>',iconSize:[30,30],iconAnchor:[15,15]})}).bindPopup(`<strong>${esc(r.name)}</strong><p>${esc(r.city)} · ${esc(r.street)}</p><p>${records.length} Ladepunkt(e) an dieser Koordinate</p>${records.map(p=>`<p>${esc(p.id)}<br>${value(p.power_kw,'kW')} · ${esc(p.plugs.join(', '))}<br>${p.open24===true?'24 Stunden geöffnet':p.open24===false?'Öffnungszeiten eingeschränkt':'Öffnungszeiten nicht ausgewiesen'}</p>`).join('')}<p>Quelle: BFE / Betreiberangaben<br>Abruf: ${date(d.fetched_at,true)}<br>Belegung nicht angezeigt.</p><a href="https://www.ich-tanke-strom.ch" target="_blank" rel="noopener">Originalübersicht ↗</a>`).addTo(chargingGroup);
+  }
+}
+function drawRadar(d){
+ $('radarInfo').textContent=d.source_date_text+' · Abruf: '+date(d.fetched_at,true)+'. '+d.scope;
+ $('radarSource').href=d.source;
+ $('radarRows').innerHTML=d.records.map(r=>`<tr><td><span class="road-tag ${r.type==='semi'?'planned':'active'}">${r.type==='semi'?'Semistationär':'Stationär'}</span></td><td>${esc(r.municipality)}</td><td>${esc(r.location)}</td></tr>`).join('');
+}

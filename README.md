@@ -19,6 +19,7 @@ Die Dateien enthalten bereits echte Messdaten und die verwendete Baustellenliste
 - Helle oder farbige amtliche Hintergrundkarte des Kantons.
 - Amtliche Kantonsgrenze als GeoJSON; Umgebung maskiert.
 - Wetterstationen Grenchen und Gösgen mit Temperatur, Niederschlag der letzten 10 Minuten und Windmittel.
+- Niederschlagsstationen Nesselboden und Riedholz / Wallierhof, getrennt als blaue Messpunkte mit Niederschlagsverlauf.
 - Verfügbare Temperaturzeitreihe mit offenen Datenlücken, höchstens 144 Messzeitpunkte.
 - Zuschaltbare Verkehrszählstellen (MIV), Gefahrenkarte Wasser, Klimaanalyse Tag 2020, Grundwasser-Mittelstand und Gemeindegrenzen.
 - Amtliche Legenden und Original-Links zu jeder Kartenebene.
@@ -37,7 +38,7 @@ Der Workflow publiziert direkt einen Pages-Build und schreibt keine Messdaten-Co
 
 ### Wetter
 
-Quelle: MeteoSchweiz Open Government Data, automatische Wetterstationen. Die Auswahl erfolgt aus den offiziellen Stationsmetadaten mit `station_canton=SO`; jeder Standort wird zusätzlich gegen das Polygon des Kantons geprüft. Neue Solothurner Stationen können damit automatisch hinzukommen. Ausserkantonale Stationen werden nicht einbezogen.
+Quelle: MeteoSchweiz Open Government Data, automatische Wetterstationen und automatische Niederschlagsstationen (`ogd-smn-precip`). Die Auswahl erfolgt aus den offiziellen Stationsmetadaten mit `station_canton=SO`; jeder Standort wird zusätzlich gegen das Polygon des Kantons geprüft. Neue Solothurner Stationen können damit automatisch hinzukommen. Ausserkantonale Stationen werden nicht einbezogen.
 
 - CSV-Zeitstempel sind UTC; Anzeige in `Europe/Zurich`, inklusive Sommerzeit.
 - `tre200s0`: Lufttemperatur 2 m, °C.
@@ -95,3 +96,14 @@ python -m http.server 8000
 Dann `http://localhost:8000` öffnen. `index.html` per Doppelklick verwendet `file://`; JSON-Abrufe funktionieren dort in vielen Browsern nicht.
 
 Leaflet 1.9.4 ist lokal beigefügt, Lizenz in `vendor/LICENSE-Leaflet.txt`. Keine Nutzerkonten, API-Schlüssel oder Serverdatenbank erforderlich. Externe Abrufe erfolgen für amtliche Karten, Legenden, Objektinformationen und durch den Workflow für die Datenquellen.
+
+## Aktualisierung dieser Version
+Im bestehenden Repository `index.html`, `app.js`, `style.css`, `scripts/update_data.py` und `data/weather.json` ersetzen. Anschliessend den vorhandenen Pages-Workflow einmal manuell starten. Niederschlagsstationen liefern keine Temperatur- oder Windwerte. Weitere kantonale Boden- und Gewässermessnetze sind noch nicht angebunden.
+
+## Zusätzliche Themen
+
+- E-Auto-Ladepunkte: BFE / DIEMO, Betreiberangaben. Geografischer Filter gegen amtliche Solothurner Kantonsgrenze, Eindeutigkeit anhand EVSE-ID. Identische Koordinaten werden auf der Karte zusammengefasst. Ladepunkte sind nicht gleich Ladestandorte. Anschlüsse und maximale gemeldete Leistung sind sichtbar. Keine aktuelle Belegung; keine Vollständigkeitsgarantie.
+- Radarstandorte: amtliche HTML-Tabellen der Kantonspolizei. Stationär und semistationär getrennt, Publikationsstand und Abrufdatum sichtbar. Keine mobile Kontrollen, keine exakten Kartenpunkte, keine Zuordnung einer Rotlichtfunktion ohne Beleg. Bei verändertem Quellformat bleibt die bisherige Datei erhalten; der Datenlauf meldet einen Fehler.
+- Wanderwege: amtlicher WMS `ch.so.arp.wanderwege_mit_sperrungen_umleitungen`, mit Originallegende, Objektabfrage und Geoportal-Link. Der Kartenstand ist keine Garantie sofortiger Aktualisierung.
+
+Für dieses Update alle Dateien inklusive des neuen Skripts `scripts/extra_data.py`, `data/charging.json` und `data/radar.json` übernehmen. Den vorhandenen Workflow danach einmal starten. Öffentliche Toiletten sind noch nicht enthalten.
